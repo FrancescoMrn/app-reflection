@@ -1,6 +1,7 @@
 # Reflection
 
-Möbius learns from the friction its agents actually hit.
+Möbius learns from the friction its agents actually hit, and keeps the
+procedures they work out.
 
 1. **Agents log friction as it happens.** Every chat gets Reflection's
    `log_friction` tool and a short note on when to use it. Each entry records
@@ -13,6 +14,13 @@ Möbius learns from the friction its agents actually hit.
 3. **It proposes, but never fixes, in a scheduled run.** Decisions to consider
    appear in the report; they do not hold the run open. You can ask for a
    specific fix later. Problems already fixed since are reported too.
+4. **Agents leave playbooks for recurring work.** After multi-step work that
+   will likely come up again, an agent refines a related playbook or writes a
+   new one, a short skill in the shared skills folder marked `(draft)` until
+   checked, so later agents find it in their skill list. When Reflection runs,
+   it checks the playbooks changed since its last report, removes the draft
+   label from those that hold up (its only edit), and proposes any other fix
+   in the report.
 
 The app has three tabs: **Reports** (each run's report with its chat),
 **Backlog** (waiting, fixes proposed, done, each linked to
@@ -24,7 +32,7 @@ run time, and run now).
 | File | Role |
 |---|---|
 | `service.py` | The `log_friction` tool: appends to `friction.jsonl` in app storage |
-| `reflection-core.md` | The note every chat gets about when to log friction |
+| `reflection-core.md` | The note every chat gets: when to log friction, and when to leave or refine a playbook |
 | `fetch.sh` | Daily job: opens a Reflection chat when anything is pending |
 | `friction_queue.py` | Lists entries still without an outcome; records outcomes |
 | `reflection.md` | What the Reflection chat does |
