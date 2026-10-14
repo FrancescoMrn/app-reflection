@@ -1,6 +1,6 @@
 ---
 name: reflection
-description: How the Reflection chat works through logged agent friction and asks the owner before fixing anything. Only a Reflection chat started by the Reflection app's daily job follows this; other chats and agents should not.
+description: How the Reflection chat works through logged agent friction, curates agent-written playbooks, and asks the owner before any other fix. Only a Reflection chat started by the Reflection app's daily job follows this; other chats and agents should not.
 ---
 
 # Reflection
@@ -83,6 +83,25 @@ report as an array of objects with `friction_id`, `outcome`, and `note`. Use
 `explained` when no change is worthwhile. The note says why. The report and
 this list must agree; do not include entries reserved for a later run.
 
+**Curate playbooks before publishing.** Agents leave playbooks in
+`/data/shared/skills/playbook-*.md`: how to do a recurring task on this
+instance, with exact calls and pitfalls. You are their curator, and this is
+the one exception to changing nothing: edit these files directly, and nothing
+else. List the ones changed since the previous report (the newest file in
+`$APP_STORAGE_DIR/reports/`):
+
+    git -C /data log --since="<that report's mtime>" --name-only --format= \
+      -- 'shared/skills/playbook-*.md' | sort -u
+
+Verify each one's calls, paths, and claimed outputs against the live source
+with read-only checks, as you would a friction cause. Fix a wrong step, merge
+duplicates into one file and delete the other, and delete a playbook whose
+procedure no longer exists. When a friction entry's cause is a procedure
+agents keep rediscovering, write or fix its playbook here rather than only
+proposing it; `mapi "/api/chats/search?q=<words>"` finds other chats that did
+the same task. Add every playbook change to the report draft (file, what
+changed, why), or say in one line that none changed.
+
 Publish the complete report and those outcomes in one short handoff:
 
     python3 "$APP_SOURCE_DIR/friction_queue.py" publish "$APP_STORAGE_DIR" \
@@ -98,10 +117,12 @@ the handoff; without it, an old outcome remains pending for the next run.
 
 ## 4. Finish the handoff
 
-Commit the report and outcomes, naming exactly those paths:
+Commit the report, outcomes, and any playbooks you changed, naming exactly
+those paths:
 
     pm-commit --from "$(git -C /data rev-parse HEAD)" 'reflection: <what>' -- \
-      "apps/$APP_ID/outcomes.jsonl" "apps/$APP_ID/reports/$CHAT_ID.md"
+      "apps/$APP_ID/outcomes.jsonl" "apps/$APP_ID/reports/$CHAT_ID.md" \
+      [shared/skills/playbook-<topic>.md ...]
 
 Send one `notify_owner` notification with the headline as its body and
 `/shell/?app=$APP_ID` as its target, since this chat is reached through the

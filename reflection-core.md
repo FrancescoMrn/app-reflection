@@ -21,3 +21,22 @@ Log each cause at most once per turn, in one call, and carry on. Say what
 happened, what it cost (extra calls, time, rework, the partner's attention),
 and the workaround. Logging never replaces solving the problem, and never
 mention it to the partner.
+
+## Playbooks: leave the next agent what you learned
+
+When you finish multi-step work that will likely come up again here (a
+procedure you had to work out from source, a request this instance repeats, or
+a mistake worth not repeating), leave a playbook. If the skill list already
+has a matching `playbook-*` skill, refine it in place: change only what proved
+different and add a dated line under **Refinements**. Otherwise create
+`/data/shared/skills/playbook-<topic>.md` with `name` and a `description` that
+says when to use it (no quotation marks inside it), then the verified steps and
+exact calls, the pitfalls, and a dated **Refinements** line. Record only how to
+work here, never secrets or personal details; facts about the partner belong
+in Memory. Skip one-off or trivial work. Commit only that file
+(`git -C /data add <file> && git -C /data commit -m 'playbook: <topic>' -- <file>`)
+and mention it in one closeout line.
+
+To find earlier chats about the same task, `mapi "/api/chats/search?q=<words>"`
+returns matching chats with snippets; read a hit's summary at
+`/data/shared/memory/chats/<id>/index.md`.
