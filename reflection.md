@@ -85,30 +85,32 @@ this list must agree; do not include entries reserved for a later run.
 
 **Curate playbooks before publishing.** Agents leave playbooks in
 `/data/shared/skills/playbook-*.md`: how to do a recurring task on this
-instance, with exact calls and pitfalls. Curating them is the one change this
-run makes without asking the owner: they are agent-written working notes, not
-Möbius source, and every edit is reversible and listed in the report. Edit
-nothing else. List the ones changed since the commit that added the previous
-report, including unsaved and new files:
+instance, with exact calls and pitfalls. A new or changed one starts its
+description with `(draft)` until it is checked. List the ones changed
+since the commit that added the previous report, including unsaved and new
+files:
 
     BASE=$(git -C /data log -1 --format=%H -- "apps/$APP_ID/reports")
     git -C /data diff --name-only "$BASE" -- 'shared/skills/playbook-*.md'
     git -C /data ls-files --others --exclude-standard -- 'shared/skills/playbook-*.md'
 
-With no earlier report, curate every `/data/shared/skills/playbook-*.md`.
+With no earlier report, check every `/data/shared/skills/playbook-*.md`.
 
 Verify each one's calls, paths, and claimed outputs against the live source
-with read-only checks, as you would a friction cause. Fix a wrong step, remove
-stale state such as versions or counts, merge overlapping playbooks into one,
-and delete a playbook whose procedure no longer exists or that a shipped skill
-now covers. Keep the set small: the session skill list is capped and sorted
-by name, so a growing pile of playbooks pushes shipped skills out of every
+with read-only checks, as you would a friction cause. When a draft checks out,
+remove its `(draft)` label. That records a source-checked observation
+and is the only edit this step makes. Propose every other change in the
+report: a wrong step, stale state such as versions or counts, overlapping
+playbooks to merge, and playbooks whose procedure no longer exists or that a
+shipped skill now covers. Agents that use a playbook correct it in place
+meanwhile. Keep the set small: the session skill list is capped and sorted by
+name, so a growing pile of playbooks pushes shipped skills out of every
 chat's list. When a playbook records something a shipped skill should say,
-propose that skill fix in the report. When a friction entry's cause is a
-procedure agents keep rediscovering, write or fix its playbook here as well;
+propose that skill fix. When a friction entry's cause is a procedure agents
+keep rediscovering, propose the playbook it needs;
 `mapi "/api/chats/search?q=<words>"` finds other chats that did the same task.
-Add every playbook change to the report draft (file, what changed, why), or
-say in one line that none changed.
+Add every label you removed and every proposal to the report draft (file,
+what, why), or say in one line that none changed.
 
 Publish the complete report and those outcomes in one short handoff:
 
@@ -125,8 +127,8 @@ the handoff; without it, an old outcome remains pending for the next run.
 
 ## 4. Finish the handoff
 
-Commit the report, outcomes, and any playbooks you changed, naming exactly
-those paths:
+Commit the report, outcomes, and any playbooks whose draft label you removed,
+naming exactly those paths:
 
     pm-commit --from "$(git -C /data rev-parse HEAD)" 'reflection: <what>' -- \
       "apps/$APP_ID/outcomes.jsonl" "apps/$APP_ID/reports/$CHAT_ID.md" \
