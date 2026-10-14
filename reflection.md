@@ -86,15 +86,21 @@ this list must agree; do not include entries reserved for a later run.
 **Curate playbooks before publishing.** Agents leave playbooks in
 `/data/shared/skills/playbook-*.md`: how to do a recurring task on this
 instance, with exact calls and pitfalls. A new or changed one starts its
-description with `(draft)` until it is checked. List the ones changed
-since the commit that added the previous report, including unsaved and new
-files:
+description with `(draft)` until it is checked. Each report records the
+commit its playbook check started from, and the next run continues from
+there. Note the current commit first, then list what changed since the
+previous checkpoint, including unsaved and new files:
 
-    BASE=$(git -C /data log -1 --format=%H -- "apps/$APP_ID/reports")
+    SCANNED=$(git -C /data rev-parse HEAD)
+    LAST=$(git -C /data log -1 --name-only --format= -- "apps/$APP_ID/reports" | grep '\.md$' | head -1)
+    BASE=$(sed -n 's/.*Playbooks checked through[^0-9a-f]*\([0-9a-f]\{40\}\).*/\1/p' "/data/$LAST" | tail -1)
     git -C /data diff --name-only "$BASE" -- 'shared/skills/playbook-*.md'
     git -C /data ls-files --others --exclude-standard -- 'shared/skills/playbook-*.md'
 
-With no earlier report, check every `/data/shared/skills/playbook-*.md`.
+If `BASE` is empty (no earlier checkpoint), check every
+`/data/shared/skills/playbook-*.md`. End the report draft with the line
+`Playbooks checked through <SCANNED>`, using the full commit id, so a playbook
+committed while this run works is checked next time.
 
 Verify each one's calls, paths, and claimed outputs against the live source
 with read-only checks, as you would a friction cause. When a draft checks out,
