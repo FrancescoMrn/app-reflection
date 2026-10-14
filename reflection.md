@@ -88,11 +88,14 @@ this list must agree; do not include entries reserved for a later run.
 instance, with exact calls and pitfalls. Curating them is the one change this
 run makes without asking the owner: they are agent-written working notes, not
 Möbius source, and every edit is reversible and listed in the report. Edit
-nothing else. List the ones changed since the previous report (the newest
-file in `$APP_STORAGE_DIR/reports/`; on the first run, all of them):
+nothing else. List the ones changed since the commit that added the previous
+report, including unsaved and new files:
 
-    git -C /data log --since="<that report's mtime>" --name-only --format= \
-      -- 'shared/skills/playbook-*.md' | sort -u
+    BASE=$(git -C /data log -1 --format=%H -- "apps/$APP_ID/reports")
+    git -C /data diff --name-only "$BASE" -- 'shared/skills/playbook-*.md'
+    git -C /data ls-files --others --exclude-standard -- 'shared/skills/playbook-*.md'
+
+With no earlier report, curate every `/data/shared/skills/playbook-*.md`.
 
 Verify each one's calls, paths, and claimed outputs against the live source
 with read-only checks, as you would a friction cause. Fix a wrong step, remove
