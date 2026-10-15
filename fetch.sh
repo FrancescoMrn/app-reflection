@@ -1,26 +1,34 @@
 #!/usr/bin/env bash
-# Reflection's daily job. When logged friction still lacks an outcome, open
-# a background Reflection chat (reached from the app, not the chat list) and
-# hand it the backlog; otherwise do nothing.
+# Reflection's daily job. When logged friction still lacks an outcome, or
+# agents submitted staged playbooks since the last report, open a background
+# Reflection chat (reached from the app, not the chat list) and hand it the
+# backlog; otherwise do nothing.
 # The chat is an ordinary Möbius agent turn: the platform supervises it, picks
 # the model from the owner's background agents, and records its cost. Every run
-# with pending friction gets its own chat. The report handoff rechecks the
+# with pending work gets its own chat. The report handoff rechecks the
 # queue under a short lock, so overlapping runs cannot settle one entry twice.
 set -euo pipefail
 
 APP_ID="${1:?numeric app id required}"
-STORAGE="${DATA_DIR:-/data}/apps/$APP_ID"
+HERE="$(dirname "$0")"
+DATA="${DATA_DIR:-/data}"
+STORAGE="$DATA/apps/$APP_ID"
 TODAY="$(date +%F)"
 RUN="$(date -u +%Y%m%dT%H%M%S)"
 
-PENDING="$(python3 "$(dirname "$0")/friction_queue.py" pending "$STORAGE" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-[ "$PENDING" -gt 0 ] || exit 0
+PENDING="$(python3 "$HERE/friction_queue.py" pending "$STORAGE" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+if SCAN="$(python3 "$HERE/playbook_queue.py" pending "$DATA" "$STORAGE")"; then
+  STAGED="$(printf '%s' "$SCAN" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["staged"]))')"
+else
+  STAGED=0  # A failed playbook scan never holds back friction; its error stays in the job's log.
+fi
+[ "$PENDING" -gt 0 ] || [ "$STAGED" -gt 0 ] || exit 0
 
-python3 - "$TODAY" "$RUN" "$PENDING" "$STORAGE/settings.json" <<'PY' | curl -sf -X POST \
+python3 - "$TODAY" "$RUN" "$PENDING" "$STAGED" "$STORAGE/settings.json" <<'PY' | curl -sf -X POST \
   -H "Authorization: Bearer $APP_TOKEN" -H "Content-Type: application/json" \
   --data-binary @- "${API_BASE_URL:-http://localhost:8000}/api/app-chats/start" >/dev/null
 import json, sys
-today, run, pending, settings_path = sys.argv[1:]
+today, run, pending, staged, settings_path = sys.argv[1:]
 try:
   settings = json.load(open(settings_path, encoding="utf-8"))
 except (OSError, ValueError):
@@ -28,13 +36,15 @@ except (OSError, ValueError):
 # The owner's chosen agent; without one the platform uses their background
 # agents list.
 agent = {key: settings[key] for key in ("provider", "model") if settings.get(key)}
+waiting = []
+if int(pending):
+  waiting.append(f"Friction entries waiting for an outcome: {pending}.")
+if int(staged):
+  waiting.append(f"Staged playbooks waiting for review: {staged}.")
 print(json.dumps({
   **agent,
   "scope": f"run-{run}",
   "title": f"Reflection — {today}",
-  "content": (
-    f"Friction entries waiting for an outcome: {pending}. Work through them "
-    "following the `reflection` skill."
-  ),
+  "content": " ".join(waiting) + " Work through them following the `reflection` skill.",
 }))
 PY

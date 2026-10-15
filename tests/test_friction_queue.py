@@ -74,6 +74,12 @@ def test_publish_rejects_invalid_outcomes_without_a_report(tmp_path, monkeypatch
   assert [entry["id"] for entry in friction_queue.pending(tmp_path)] == ["a"]
 
 
+def test_a_run_with_no_friction_waiting_publishes_its_playbook_report_alone(tmp_path, monkeypatch):
+  report = _publish(tmp_path, monkeypatch, "run-1")
+  assert report.read_text().startswith("# Report from run-1")
+  assert (tmp_path / "outcomes.jsonl").read_text() == ""
+
+
 def test_a_run_cannot_publish_without_its_chat_id(tmp_path):
   _log(tmp_path, "a")
   draft = tmp_path / "draft.md"

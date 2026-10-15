@@ -69,8 +69,8 @@ def publish(storage: Path, draft: Path, decisions: list[dict]) -> Path:
   content = draft.read_bytes()
   if not content.strip():
     raise ValueError("report is empty")
-  if not isinstance(decisions, list) or not decisions:
-    raise ValueError("outcomes must be a nonempty JSON array")
+  if not isinstance(decisions, list):
+    raise ValueError("outcomes must be a JSON array")
   ids = [item.get("friction_id") for item in decisions if isinstance(item, dict)]
   if (len(ids) != len(decisions) or any(not isinstance(value, str) or not value for value in ids)
       or len(set(ids)) != len(ids)):
@@ -86,6 +86,10 @@ def publish(storage: Path, draft: Path, decisions: list[dict]) -> Path:
     if any(record.get("run") == run for record in _read_jsonl(storage / "outcomes.jsonl")):
       raise ValueError("this run already published outcomes; its report cannot be replaced")
     remaining = {entry["id"] for entry in pending(storage)}
+    # A run that found no friction waiting only checked playbooks, so it
+    # publishes its report alone; a run with friction must settle some of it.
+    if not decisions and remaining:
+      raise ValueError("outcomes must be a nonempty JSON array while friction is waiting")
     if any(friction_id not in remaining for friction_id in ids):
       raise ValueError("an entry was settled by another run; refresh the report and retry")
     reports = storage / "reports"

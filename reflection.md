@@ -83,40 +83,61 @@ report as an array of objects with `friction_id`, `outcome`, and `note`. Use
 `explained` when no change is worthwhile. The note says why. The report and
 this list must agree; do not include entries reserved for a later run.
 
-**Curate playbooks before publishing.** Agents leave playbooks in
-`/data/shared/skills/playbook-*.md`: how to do a recurring task on this
-instance, with exact calls and pitfalls. A new or changed one starts its
-description with `(draft)` until it is checked. Each report records the
-commit its playbook check started from, and the next run continues from
-there. Note the current commit first, then list what changed since the
-previous checkpoint, including unsaved and new files:
+**Review playbooks before publishing.** Agents write playbooks (how to do a
+recurring task on this instance, with exact calls and pitfalls) into
+`/data/shared/skills/.playbooks-pending/`, which no skill list includes, and
+committing one submits it. A submitted playbook is new input like fresh
+friction, so it also starts a run; when no friction is waiting, the report
+covers only playbooks and the outcome list is an empty array. List what to
+check:
 
-    SCANNED=$(git -C /data rev-parse HEAD)
-    LAST=$(git -C /data log -1 --name-only --format= -- "apps/$APP_ID/reports" | grep '\.md$' | head -1)
-    BASE=$(sed -n 's/.*Playbooks checked through[^0-9a-f]*\([0-9a-f]\{40\}\).*/\1/p' "/data/$LAST" | tail -1)
-    git -C /data diff --name-only "$BASE" -- 'shared/skills/playbook-*.md'
-    git -C /data ls-files --others --exclude-standard -- 'shared/skills/playbook-*.md'
+    python3 "$APP_SOURCE_DIR/playbook_queue.py" pending /data "$APP_STORAGE_DIR"
 
-If `BASE` is empty (no earlier checkpoint), check every
-`/data/shared/skills/playbook-*.md`. End the report draft with the line
-`Playbooks checked through <SCANNED>`, using the full commit id, so a playbook
-committed while this run works is checked next time.
+prints `through`, the commit this check covers; `staged`, the playbooks
+submitted since the last report's checkpoint (every submitted one, when no
+report has a checkpoint yet); and `live`, the playbooks in use that changed
+since then.
 
-Verify each one's calls, paths, and claimed outputs against the live source
-with read-only checks, as you would a friction cause. When a draft checks out,
-remove its `(draft)` label. That records a source-checked observation
-and is the only edit this step makes. Propose every other change in the
-report: a wrong step, stale state such as versions or counts, overlapping
-playbooks to merge, and playbooks whose procedure no longer exists or that a
-shipped skill now covers. Agents that use a playbook correct it in place
-meanwhile. Keep the set small: the session skill list is capped and sorted by
-name, so a growing pile of playbooks pushes shipped skills out of every
-chat's list. When a playbook records something a shipped skill should say,
-propose that skill fix. When a friction entry's cause is a procedure agents
-keep rediscovering, propose the playbook it needs;
-`mapi "/api/chats/search?q=<words>"` finds other chats that did the same task.
-Add every label you removed and every proposal to the report draft (file,
-what, why), or say in one line that none changed.
+Only this step moves a playbook into or out of use in `/data/shared/skills/`,
+and that move is the one change a run makes without the owner's separate
+approval: it touches only agent-written playbooks, never source or settings.
+The folder a playbook is in, not anything written inside it, records whether
+it was checked. Check every playbook the scan listed: verify its calls, paths,
+and claimed outputs against the live source with read-only checks, as you
+would a friction cause, and judge whether its steps are safe for an
+owner-scoped agent to follow, not only whether the calls exist. Then:
+
+- A staged playbook that holds up goes into use, replacing a live one of the
+  same name:
+
+      python3 "$APP_SOURCE_DIR/playbook_queue.py" promote /data <staged path>
+
+- A staged playbook that does not hold up stays staged; propose its fix in
+  the report.
+- A live playbook that no longer holds up leaves every skill list until it is
+  fixed:
+
+      python3 "$APP_SOURCE_DIR/playbook_queue.py" demote /data <live path>
+
+  If a staged copy of it is already waiting, this removes the live one and
+  leaves that copy for review.
+
+Both commands print the paths to name in the final commit. Propose every other
+change in the report rather than editing playbooks here: the fix for a step
+that failed, stale state such as versions or counts, overlapping playbooks to
+merge, and live playbooks that a shipped skill now covers. Keep the live set
+small: the session skill list is capped and sorted by name, so a growing pile
+of playbooks pushes shipped skills out of every chat's list. When a playbook
+records something a shipped skill should say, propose that skill fix. When a
+friction entry's cause is a procedure agents keep rediscovering, propose the
+playbook it needs; `mapi "/api/chats/search?q=<words>"` finds other chats that
+did the same task. Add every playbook you promoted or demoted and every
+proposal to the report draft (file, what, why), or say in one line that none
+changed. End the report draft with this line, using the full commit id the
+scan printed as `through`, so a playbook submitted while this run works is
+checked next time:
+
+    Playbooks checked through <through>
 
 Publish the complete report and those outcomes in one short handoff:
 
@@ -133,12 +154,12 @@ the handoff; without it, an old outcome remains pending for the next run.
 
 ## 4. Finish the handoff
 
-Commit the report, outcomes, and any playbooks whose draft label you removed,
+Commit the report, outcomes, and every path the playbook commands printed,
 naming exactly those paths:
 
     pm-commit --from "$(git -C /data rev-parse HEAD)" 'reflection: <what>' -- \
       "apps/$APP_ID/outcomes.jsonl" "apps/$APP_ID/reports/$CHAT_ID.md" \
-      [shared/skills/playbook-<topic>.md ...]
+      [<paths printed by promote or demote> ...]
 
 Send one `notify_owner` notification with the headline as its body and
 `/shell/?app=$APP_ID` as its target, since this chat is reached through the

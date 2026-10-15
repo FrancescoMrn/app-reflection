@@ -2,7 +2,7 @@
   "id": "reflection",
   "name": "Reflection",
   "version": "4.0.1",
-  "description": "Agents log friction as it happens; on days with new friction, Reflection investigates and reports proposed fixes without making changes.",
+  "description": "Agents log friction and stage playbooks as they work; on days with something new, Reflection investigates, puts checked playbooks into use, and reports proposed fixes without making other changes.",
   "author": "mobius-os",
   "license": "MIT",
   "homepage": "https://github.com/mobius-os/app-reflection",
@@ -34,6 +34,7 @@
     "friction.js",
     "schedule.js",
     "friction_queue.py",
+    "playbook_queue.py",
     "service.py",
     "reflection.md",
     "reflection-core.md"

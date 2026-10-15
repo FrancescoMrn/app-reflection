@@ -1,4 +1,4 @@
-"""The daily job opens a Reflection chat only when friction is pending."""
+"""The daily job opens a Reflection chat only when friction or a submitted playbook is pending."""
 
 from __future__ import annotations
 
@@ -118,3 +118,76 @@ def test_the_owners_chosen_agent_runs_the_chat(tmp_path, api):
 
   ((_path, _auth, body),) = requests
   assert (body["provider"], body["model"]) == ("codex", "gpt-5.6-sol")
+
+
+def _git(data, *args):
+  return subprocess.run(["git", "-C", str(data), *args], check=True,
+                        capture_output=True, text=True).stdout.strip()
+
+
+def _commit(data, path, text):
+  (data / path).parent.mkdir(parents=True, exist_ok=True)
+  (data / path).write_text(text)
+  _git(data, "add", "--", path)
+  _git(data, "commit", "-q", "-m", "commit")
+  return _git(data, "rev-parse", "HEAD")
+
+
+def _submit_playbook(data):
+  (data / "apps" / "7").mkdir(parents=True, exist_ok=True)
+  _git(data, "init", "-q")
+  _git(data, "config", "user.name", "Test")
+  _git(data, "config", "user.email", "test@example.com")
+  return _commit(data, "shared/skills/.playbooks-pending/playbook-a.md", "# Playbook\n")
+
+
+def test_a_submitted_playbook_starts_a_run_without_friction(tmp_path, api):
+  base_url, requests = api
+  _submit_playbook(tmp_path)
+
+  result = _run(tmp_path, base_url)
+
+  assert result.returncode == 0, result.stderr
+  ((_path, _auth, body),) = requests
+  assert body["content"] == (
+    "Staged playbooks waiting for review: 1. "
+    "Work through them following the `reflection` skill."
+  )
+
+
+def test_a_playbook_the_last_report_checked_starts_nothing(tmp_path, api):
+  base_url, requests = api
+  through = _submit_playbook(tmp_path)
+  _commit(tmp_path, "apps/7/reports/run-1.md",
+          f"# Report\n\nPlaybooks checked through {through}\n")
+
+  assert _run(tmp_path, base_url).returncode == 0
+  assert requests == []
+
+
+def test_friction_and_playbooks_share_one_run(tmp_path, api):
+  base_url, requests = api
+  _submit_playbook(tmp_path)
+  (tmp_path / "apps" / "7" / "friction.jsonl").write_text(
+    json.dumps({"id": "a", "friction": "x"}) + "\n")
+
+  _run(tmp_path, base_url)
+
+  ((_path, _auth, body),) = requests
+  assert body["content"].startswith(
+    "Friction entries waiting for an outcome: 1. Staged playbooks waiting for review: 1.")
+
+
+def test_a_failed_playbook_scan_never_holds_back_friction(tmp_path, api):
+  base_url, requests = api
+  storage = tmp_path / "apps" / "7"
+  storage.mkdir(parents=True)
+  (storage / "friction.jsonl").write_text(json.dumps({"id": "a", "friction": "x"}) + "\n")
+  (tmp_path / ".git").write_text("not a repository\n")
+
+  result = _run(tmp_path, base_url)
+
+  assert result.returncode == 0, result.stderr
+  assert "playbook_queue:" in result.stderr  # the scan's error stays in the job's log
+  ((_path, _auth, body),) = requests
+  assert body["content"].startswith("Friction entries waiting for an outcome: 1.")
