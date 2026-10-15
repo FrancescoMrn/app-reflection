@@ -133,6 +133,13 @@ def _commit(data, path, text):
   return _git(data, "rev-parse", "HEAD")
 
 
+def _verdict(data, path, verdict):
+  # What Reflection's review records for the exact content at `path`.
+  blob = _git(data, "hash-object", "--", path)
+  with (data / "apps" / "7" / "playbooks.jsonl").open("a") as ledger:
+    ledger.write(json.dumps({"path": path, "blob": blob, "verdict": verdict}) + "\n")
+
+
 def _submit_playbook(data):
   (data / "apps" / "7").mkdir(parents=True, exist_ok=True)
   _git(data, "init", "-q")
@@ -155,11 +162,29 @@ def test_a_submitted_playbook_starts_a_run_without_friction(tmp_path, api):
   )
 
 
-def test_a_playbook_the_last_report_checked_starts_nothing(tmp_path, api):
+def test_a_playbook_written_directly_in_the_live_folder_starts_a_run(tmp_path, api):
   base_url, requests = api
-  through = _submit_playbook(tmp_path)
-  _commit(tmp_path, "apps/7/reports/run-1.md",
-          f"# Report\n\nPlaybooks checked through {through}\n")
+  _submit_playbook(tmp_path)
+  _verdict(tmp_path, "shared/skills/.playbooks-pending/playbook-a.md", "held")
+  live = tmp_path / "shared" / "skills" / "playbook-direct.md"
+  live.write_text("# Never reviewed\n")  # not even committed
+
+  result = _run(tmp_path, base_url)
+
+  assert result.returncode == 0, result.stderr
+  ((_path, _auth, body),) = requests
+  assert body["content"] == (
+    "Live playbooks not yet reviewed: 1. "
+    "Work through them following the `reflection` skill."
+  )
+
+
+def test_reviewed_playbooks_start_nothing(tmp_path, api):
+  base_url, requests = api
+  _submit_playbook(tmp_path)
+  _verdict(tmp_path, "shared/skills/.playbooks-pending/playbook-a.md", "held")
+  _commit(tmp_path, "shared/skills/playbook-b.md", "# In use\n")
+  _verdict(tmp_path, "shared/skills/playbook-b.md", "promoted")
 
   assert _run(tmp_path, base_url).returncode == 0
   assert requests == []
@@ -191,3 +216,18 @@ def test_a_failed_playbook_scan_never_holds_back_friction(tmp_path, api):
   assert "playbook_queue:" in result.stderr  # the scan's error stays in the job's log
   ((_path, _auth, body),) = requests
   assert body["content"].startswith("Friction entries waiting for an outcome: 1.")
+
+
+def test_a_failed_playbook_scan_still_starts_a_run_that_says_so(tmp_path, api):
+  base_url, requests = api
+  (tmp_path / "apps" / "7").mkdir(parents=True)
+  (tmp_path / ".git").write_text("not a repository\n")
+
+  result = _run(tmp_path, base_url)
+
+  assert result.returncode == 0, result.stderr
+  ((_path, _auth, body),) = requests
+  assert body["content"] == (
+    "The playbook scan failed, so playbooks could not be listed. "
+    "Work through them following the `reflection` skill."
+  )

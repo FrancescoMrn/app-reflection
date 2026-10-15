@@ -6,7 +6,7 @@ procedures they work out.
 1. **Agents log friction as it happens.** Every chat gets Reflection's
    `log_friction` tool and a short note on when to use it. Each entry records
    the exact moment it was logged, so it can be revisited later.
-2. **Once a day, if new friction or a submitted playbook is waiting,
+2. **Once a day, if new friction or a playbook to review is waiting,
    Reflection works through it in the background.** It traces each root
    cause, checks whether it has been fixed since, and asks the logging agent
    why it acted as it did when the friction seems to come from its
@@ -22,10 +22,11 @@ procedures they work out.
    playbook against live source and moves the ones that hold up into the
    shared skills folder, where later agents find them; the rest stay staged
    with a proposed fix, and a live playbook that stops holding up is moved
-   back out. Only Reflection moves playbooks into use, so the folder a
-   playbook is in, not anything written inside it, records whether it was
-   checked. Moving playbooks into or out of use is the only change a run makes
-   on its own.
+   back out. Reflection records, by exact content, every version it checked,
+   so that record, not anything written inside a playbook, says what was
+   reviewed; a playbook written or changed directly in the shared skills
+   folder waits for the next run too. Moving playbooks into or out of use is
+   the only change a run makes on its own.
 
 The app has three tabs: **Reports** (each run's report with its chat),
 **Backlog** (waiting, fixes proposed, done, each linked to
@@ -38,9 +39,9 @@ run time, and run now).
 |---|---|
 | `service.py` | The `log_friction` tool: appends to `friction.jsonl` in app storage |
 | `reflection-core.md` | The note every chat gets: when to log friction, and how to stage a playbook |
-| `fetch.sh` | Daily job: opens a Reflection chat when friction or a submitted playbook is waiting |
+| `fetch.sh` | Daily job: opens a Reflection chat when friction or a playbook to review is waiting |
 | `friction_queue.py` | Lists entries still without an outcome; records outcomes |
-| `playbook_queue.py` | Lists playbooks to check since the last report; moves them into or out of use |
+| `playbook_queue.py` | Lists playbooks waiting for review, records Reflection's verdicts, and moves playbooks into or out of use |
 | `reflection.md` | What the Reflection chat does |
 | `index.jsx`, `friction.js`, `schedule.js` | The app screen |
 

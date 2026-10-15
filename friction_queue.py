@@ -8,6 +8,9 @@ an interrupted report handoff.
 
   friction_queue.py pending <storage-dir>
       Print the pending entries as a JSON array, oldest first.
+  friction_queue.py report <storage-dir> <draft-file>
+      Publish the report of a run that began with no friction waiting; friction
+      logged while it ran stays pending for the next run.
   friction_queue.py publish <storage-dir> <draft-file> <outcomes-file>
       Publish this run's report and the reported outcomes together.
 """
@@ -69,8 +72,8 @@ def publish(storage: Path, draft: Path, decisions: list[dict]) -> Path:
   content = draft.read_bytes()
   if not content.strip():
     raise ValueError("report is empty")
-  if not isinstance(decisions, list):
-    raise ValueError("outcomes must be a JSON array")
+  if not isinstance(decisions, list) or not decisions:
+    raise ValueError("outcomes must be a nonempty JSON array")
   ids = [item.get("friction_id") for item in decisions if isinstance(item, dict)]
   if (len(ids) != len(decisions) or any(not isinstance(value, str) or not value for value in ids)
       or len(set(ids)) != len(ids)):
@@ -86,10 +89,6 @@ def publish(storage: Path, draft: Path, decisions: list[dict]) -> Path:
     if any(record.get("run") == run for record in _read_jsonl(storage / "outcomes.jsonl")):
       raise ValueError("this run already published outcomes; its report cannot be replaced")
     remaining = {entry["id"] for entry in pending(storage)}
-    # A run that found no friction waiting only checked playbooks, so it
-    # publishes its report alone; a run with friction must settle some of it.
-    if not decisions and remaining:
-      raise ValueError("outcomes must be a nonempty JSON array while friction is waiting")
     if any(friction_id not in remaining for friction_id in ids):
       raise ValueError("an entry was settled by another run; refresh the report and retry")
     reports = storage / "reports"
@@ -126,9 +125,57 @@ def publish(storage: Path, draft: Path, decisions: list[dict]) -> Path:
     return destination
 
 
+def _replace_report(storage: Path, run: str, content: bytes) -> Path:
+  reports = storage / "reports"
+  reports.mkdir(parents=True, exist_ok=True)
+  descriptor, temporary = tempfile.mkstemp(prefix=f".{run}.", dir=reports)
+  try:
+    with os.fdopen(descriptor, "wb") as handle:
+      handle.write(content)
+      handle.flush()
+      os.fsync(handle.fileno())
+    destination = reports / f"{run}.md"
+    os.replace(temporary, destination)
+    directory = os.open(reports, os.O_RDONLY)
+    try:
+      os.fsync(directory)
+    finally:
+      os.close(directory)
+  finally:
+    if os.path.exists(temporary):
+      os.unlink(temporary)
+  return destination
+
+
+def report(storage: Path, draft: Path) -> Path:
+  """Publish the report of a run that began with no friction waiting.
+
+  Such a run settles no entries, so friction logged while it ran stays pending
+  for the next run instead of blocking this report.
+  """
+  run = os.environ.get("CHAT_ID")
+  if not run:
+    raise ValueError("CHAT_ID is required to publish a run report")
+  content = draft.read_bytes()
+  if not content.strip():
+    raise ValueError("report is empty")
+  with (storage / "outcomes.jsonl").open("a+b") as outcomes:
+    fcntl.flock(outcomes, fcntl.LOCK_EX)
+    if any(record.get("run") == run for record in _read_jsonl(storage / "outcomes.jsonl")):
+      raise ValueError("this run already published outcomes; its report cannot be replaced")
+    return _replace_report(storage, run, content)
+
+
 def main(argv: list[str]) -> int:
   if len(argv) == 3 and argv[1] == "pending":
     print(json.dumps(pending(Path(argv[2])), ensure_ascii=False, indent=1))
+    return 0
+  if len(argv) == 4 and argv[1] == "report":
+    try:
+      print(report(Path(argv[2]), Path(argv[3])))
+    except (OSError, ValueError) as exc:
+      print(f"friction_queue: {exc}", file=sys.stderr)
+      return 1
     return 0
   if len(argv) == 5 and argv[1] == "publish":
     try:

@@ -74,10 +74,49 @@ def test_publish_rejects_invalid_outcomes_without_a_report(tmp_path, monkeypatch
   assert [entry["id"] for entry in friction_queue.pending(tmp_path)] == ["a"]
 
 
-def test_a_run_with_no_friction_waiting_publishes_its_playbook_report_alone(tmp_path, monkeypatch):
-  report = _publish(tmp_path, monkeypatch, "run-1")
-  assert report.read_text().startswith("# Report from run-1")
+def _report(storage, monkeypatch, run):
+  monkeypatch.setenv("CHAT_ID", run)
+  draft = storage / f"{run}-draft.md"
+  draft.write_text(f"# Playbook report from {run}\n")
+  return friction_queue.report(storage, draft)
+
+
+def test_friction_logged_during_a_playbook_only_run_waits_for_the_next_run(tmp_path, monkeypatch):
+  _log(tmp_path, "late")  # logged after the run began with nothing waiting
+
+  report = _report(tmp_path, monkeypatch, "run-1")
+
+  assert report.read_text() == "# Playbook report from run-1\n"
+  assert [entry["id"] for entry in friction_queue.pending(tmp_path)] == ["late"]
   assert (tmp_path / "outcomes.jsonl").read_text() == ""
+
+
+def test_a_report_cannot_replace_one_whose_run_published_outcomes(tmp_path, monkeypatch):
+  _log(tmp_path, "a")
+  _publish(tmp_path, monkeypatch, "run-1", _decision("a"))
+  with pytest.raises(ValueError, match="report cannot be replaced"):
+    _report(tmp_path, monkeypatch, "run-1")
+  assert (tmp_path / "reports" / "run-1.md").read_text() == "# Report from run-1\n\nConclusions.\n"
+
+
+def test_a_report_needs_its_run_and_some_content(tmp_path, monkeypatch):
+  draft = tmp_path / "draft.md"
+  draft.write_text("# Report\n")
+  with pytest.raises(ValueError, match="CHAT_ID"):
+    friction_queue.report(tmp_path, draft)
+  monkeypatch.setenv("CHAT_ID", "run-1")
+  draft.write_text("  \n")
+  with pytest.raises(ValueError, match="empty"):
+    friction_queue.report(tmp_path, draft)
+  assert not (tmp_path / "reports" / "run-1.md").exists()
+
+
+def test_cli_publishes_a_playbook_only_report(tmp_path, monkeypatch, capsys):
+  monkeypatch.setenv("CHAT_ID", "run-1")
+  draft = tmp_path / "draft.md"
+  draft.write_text("# Report\n")
+  assert friction_queue.main(["friction_queue.py", "report", str(tmp_path), str(draft)]) == 0
+  assert capsys.readouterr().out.strip() == str(tmp_path / "reports" / "run-1.md")
 
 
 def test_a_run_cannot_publish_without_its_chat_id(tmp_path):
